@@ -43,9 +43,3 @@ ROLLBACK;
 Создадим индекс для более быстрого поиска 
 CREATE INDEX customers_full_name_index
 ON customers(full_name);
-
-SELECT * FROM orders;
-SELECT * FROM order_items;
-SELECT * FROM customers;
-SELECT * FROM restaurants;
-SELECT * FROM menu_items;
