@@ -155,7 +155,7 @@ try:
                 print('Совпадений не найдено')
                 continue
         else:
-            print("Ошибка: введите цифру от 0 до 3.")
+            print("Ошибка: введите цифру от 0 до 7.")
         
 
 except psycopg2.Error as e:
