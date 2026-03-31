@@ -1,141 +1,169 @@
 import psycopg2
 
 DB_CONFIG = {
-    'dbname': 'food_delivery_pro',
-    'user': 'postgres',
-    'password': 'MatadorSQL',
-    'host': '127.0.0.1',
-    'port': '5432'
+    "dbname": "food_delivery_pro",
+    "user": "postgres",
+    "password": "MatadorSQL",
+    "host": "127.0.0.1",
+    "port": "5432"
 }
 
 conn = None
-cursor = None
+
 try:
     conn = psycopg2.connect(**DB_CONFIG)
     cursor = conn.cursor()
-    menu = """
-1 - Показать меню ресторана
-2 - Массовое изменение цен 
-3 - Управление стоп-листом
-0 - Выход\n
-"""
+    print("Успешное подключение к БД!")
 
-    # ВЫВОД МЕНЮ
-    choise = 0
+    # Запускаем бесконечное меню
     while True:
-        choise = input(f'{menu}>>> ')
-       
-        if choise == '0':
-           print('Выходим...')
-           break
-        # МЕНЮ РЕСТОРАНА
-        elif choise == '1':
-            # ЗАПРАШИВАЕМ ID РЕСТОРАНА
-            restaurant_id_input = int(input('Введите id ресторана: '))
+        print("\n=== ПАНЕЛЬ АДМИНИСТРАТОРА ===")
+        print("1. Показать меню ресторана")
+        print("2. Массовое изменение цен")
+        print("3. Управление стоп-листом")
+        print("4. Добавить новое блюдо в меню")
+        print("5. Отчет по выручке ресторана")
+        print("6. Изменение статуса заказа")
+        print("7. Поиск клиента по части имени")
+        print("0. Выход")
 
-            if restaurant_id_input <= 0:
-                print('Id ресторана должно быть положительным числом')
+        choice = input("Выберите действие (0-7): ").strip()
+
+        if choice == '0':
+            print("До свидания!")
+            break
+        elif choice == '1':
+            rest_id = input("Введите ID ресторана: ")
+            sql = "SELECT item_name, price, is_available FROM menu_items WHERE restaurant_id = %s ORDER BY id;"
+            cursor.execute(sql, (rest_id,))
+            items = cursor.fetchall()
+
+            if not items:
+                print("Блюд не найдено!")
                 continue
 
-            cursor.execute(
-                'SELECT r.title, m.id, m.item_name, m.price, m.is_available FROM restaurants r JOIN menu_items m ON m.restaurant_id = r.id WHERE restaurant_id = %s',
-                (restaurant_id_input,)
-            )
-            restaurant_menu = cursor.fetchall()
+            print(f"\n--- МЕНЮ (Ресторан ID {rest_id}) ---")
+            for row in items:
+                name, price, available = row[0], row[1], row[2]
+                status = "" if available else "[НЕТ В НАЛИЧИИ]"
+                print(f"- {name:<24} | {price} руб. {status}")
 
-            # ПРОВЕРКА НА СУЩЕСТВОВАНИЕ РЕСТОРАНА
-            if restaurant_menu:
-                print(f'\n{'Ресторан':<35} | {'ID блюда':<10} | {'Блюдо':<40} | {'Цена':<10} | {'Статус'}')
-                print('-' * 120)
+        elif choice == '2':
+            rest_id = input("Введите ID ресторана: ")
+            percent = float(input("Процент наценки: "))
+            # 15% = 1.15
+            multiplier = 1 + (percent / 100)
 
-                # ВЫВОДИМ МЕНЮ
-                for item in restaurant_menu:
-                    print(f'{item[0]:<35} | {item[1]:<10} | {item[2]:<40} | {(str(item[3]) + ' руб.'):<10} | {item[4]}')
-                    print('-' * 120)
-            else: 
-                print('Ресторана с таким id нет в базе')
+            # Достаем текущие цены
+            sql_select = "SELECT id, item_name, price FROM menu_items WHERE restaurant_id = %s AND is_available = TRUE;"
+            cursor.execute(sql_select, (rest_id,))
+            items = cursor.fetchall()
 
-        # МАССОВОЕ ИЗМЕНЕНИЕ ЦЕН
-        elif choise == '2':
-            # ЗАПРАШИВАЕМ id И ПРОЦЕНТ НАЦЕНКИ
-            restaurant_id_input = int(input('Введите id ресторана: '))
-            if restaurant_id_input <= 0:
-                print('Id ресторана должно быть положительным числом')
+            if not items:
+                print("Нет доступных блюд.")
                 continue
 
-            percent_markup = int(input('На сколько % повысить цены (число): '))
-            if percent_markup <= 0:
-                print('Процент наценки должен быть положительным числом')
-                continue
-            # ВЫВОД ОБНОВЛЕНИЙ В ТАБЛИЦЕ
-            cursor.execute(
-                "SELECT item_name, price, (price + price / 100 * %s) FROM menu_items WHERE restaurant_id = %s",
-                (percent_markup, restaurant_id_input)
-            )
-            new_menu = cursor.fetchall()
-            if new_menu:
-                print(f'{'Название':<40} | {'Старая цена':<12} | {'Новая цена'}')
-                print('-' * 70)
-                for item in new_menu:
-                    print(f'{item[0]:<40} | {(str(item[1]) + ' руб.'):<12} | {item[2]:.2f} руб.')
-                    print('-' * 70)
-                
-                # ПРИМЕНЯЕМ НОВЫЕ ЦЕНЫ
-                is_commit = input('Применить новые цены? (y/n): ')
-                if is_commit.lower().strip() == 'y':
-                    cursor.execute(
-                        "UPDATE menu_items SET price = price + (price / 100) * %s",
-                        (percent_markup,)
-                    )
-                    conn.commit()
-                    print('Цены успешно обновлены!')
-                elif is_commit.lower().strip() == 'n':
-                    print('Действия отменены')
-                else:
-                    print('Неправильный ввод')
+            # Предпросмотр
+            print("\n--- ПРЕДВАРИТЕЛЬНЫЙ ПРОСМОТР ---")
+            for row in items:
+                item_id, name, old_price = row[0], row[1], float(row[2])
+                new_price = round(old_price * multiplier, 2)
+                print(f"{name:<15} | {old_price} ---> {new_price} руб.")
+
+            # Запрашиваем разрешение
+            confirm = input("\nПрименить изменения в базе? (Y/N): ").strip().upper()
+
+            if confirm == "Y":
+                sql_update = """
+                    UPDATE menu_items
+                    SET price = price * %s
+                    WHERE restaurant_id = %s AND is_available = TRUE;
+                """
+                cursor.execute(sql_update, (multiplier, rest_id))
+                conn.commit()
+                print(f"[УСПЕХ] Цены обновлены у {cursor.rowcount} блюд!")
             else:
-                print('Ресторана с таким id не существует, или в ресторане нет блюд')
+                print("[ОТМЕНА] Ничего не меняли.")
 
-        # УПРАВЛЕНИЕ СТОП-ЛИСТОМ
-        elif choise == '3':
-            # ЗАПРАШИВАЕМ ID
-            item_id_input = int(input('Введите id блюда: '))
+        elif choice == '3':
+            item_id = input("Введите ID блюда для стоп-листа: ")
 
-            if item_id_input <= 0:
-                print('Id блюда должно быть положительным числом')
+            sql = "UPDATE menu_items SET is_available = FALSE WHERE id = %s;"
+            cursor.execute(sql, (item_id,))
+
+            if cursor.rowcount > 0:
+                conn.commit()
+                print(f"[УСПЕХ] Блюдо ID {item_id} добавлено в стоп-лист.")
+            else:
+                conn.rollback()
+                print(f"[ОШИБКА] Блюдо с ID {item_id} не найдено.")
+        
+        elif choice == '4':
+            rest_id = input('Введите id ресторана: ')
+            item_name = input('Введите название блюда: ')
+            item_price = input('Введите цену блюда: ')
+
+            cursor.execute('INSERT INTO menu_items (item_name, restaurant_id, price) VALUES (%s, %s, %s)', (item_name, rest_id, item_price))
+
+            if cursor.rowcount > 0:
+                print(f'Успешно! Блюду присвоен номер: [{rest_id}]')
+                conn.commit()
+            else:
+                print('Ошибка: ошибка в вводе данных.')
                 continue
-            # СООБЩИМ, ЕСЛИ БЛЮДО ИТАК В СТОП-ЛИСТЕ ИЛИ ОТСУТСТВУЕТ ВОВСЕ
-            cursor.execute("SELECT is_available, item_name FROM menu_items WHERE id = %s", (item_id_input,))
+        elif choice == '5':
+            rest_id = input('Введите id ресторана: ')
 
-            # ПОЛУЧИМ РЕЗУЛЬТАТ ЗАПРОСА
+            query_profit = """
+            SELECT r.title, SUM(mi.price * oi.quantity) as profit
+            FROM restaurants r 
+            JOIN menu_items mi ON mi.restaurant_id = r.id
+            JOIN order_items oi ON oi.item_id = mi.id
+            GROUP BY r.title, r.id
+            HAVING r.id = %s
+            """
+            cursor.execute(query_profit, (rest_id,))
+
             result = cursor.fetchone()
-            if not result:
-                print(f'Блюда с id {item_id_input} нет в ресторане')
+            print(f'Ресторан: {result[0]}\nПрибыль: {result[1]}')
+        elif choice == '6':
+            order_id = input('Введите id заказа: ')
+            new_status = input('Введите новый статус: ')
+            cursor.execute('UPDATE orders SET status = %s WHERE id = %s', (new_status, order_id))
+
+            if cursor.rowcount > 0:
+                print(f'Успешно! Заказу с id[{order_id}] обновлен статус на {new_status}')
+                conn.commit()
+            else:
+                print('Ошибка в вводе данных')
                 continue
-            elif result[0] == False:
-                print(f'Блюдо "{result[1]}" уже находится в стоп-листе')
+        
+        elif choice == '7':
+            excerpt = input('Введите отрывок имени: ')
+            sql = 'SELECT * FROM customers WHERE full_name LIKE %s'
+            search_param = f'%{excerpt}%'
+            cursor.execute(sql, (search_param,))
+            customers = cursor.fetchall()
+            print(customers)
+            if customers:
+                print(f'{'id':<4} | {'Полное имя':<30} | {'Почта':<20}')
+                print('-' * 55)
+                for customer in customers:
+                    print(f'{customer[0]:<4} | {customer[1]:<30} | {customer[2]:<20}')
+                    print('-' * 55)
+            else:
+                print('Совпадений не найдено')
                 continue
-
-            # ИЗМЕНИМ СТАТУС ДОСТУПНОСТИ
-            cursor.execute("UPDATE menu_items SET is_available = FALSE WHERE id = %s", (item_id_input,))
-
-            # СОХРАНИМ 
-            conn.commit()
-
-            # СООБЩИМ ОБ УСПЕШНОСТИ
-            print(f'Блюдо "{result[1]}" добавлено в стоп-лист')
         else:
-            print('Ошибка выбора. Ввод должен быть числом (0-3)')
-except conn.Error as db_error:
-    print(f'Ошибка БД: {db_error}')
-    print('Отменяем операцию')
-    conn.rollback()
-except ValueError:
-    print('Ошибка: ввод должен быть числом')
-    print('Оменяем операцию')
-    conn.rollback()
+            print("Ошибка: введите цифру от 0 до 3.")
+        
+
+except psycopg2.Error as e:
+    print(f"\n[КРИТИЧЕСКАЯ ОШИБКА БД]: {e}")
+    if conn:
+        conn.rollback()
+
 finally:
-    if 'conn' in locals() and conn:
-        cursor.close() 
+    if conn:
         conn.close()
-        print('Соедение разорвано')
+        print("Соединение с базой закрыто.")
